@@ -35,6 +35,8 @@ class _VideoModalState extends State<VideoModal> {
   bool _isInitialized = false;
   bool _hasError = false;
   bool _showControls = true;
+  bool _showVolumeSlider = false; // 볼륨 슬라이더 표시 여부
+  double _volume = 1.0; // 현재 볼륨 (0.0 ~ 1.0)
   String _errorMessage = '';
 
   @override
@@ -76,13 +78,15 @@ class _VideoModalState extends State<VideoModal> {
           _hasError = false;
         });
 
-        // 자동 재생 및 반복
-        _controller!.play();
-        _controller!.setLooping(true);
+        // 자동 재생 및 반복, 초기 볼륨 설정
+        await _controller!.play();
+        await _controller!.setLooping(true);
+        await _controller!.setVolume(_volume);
 
         print('✅ 비디오 초기화 성공');
         print('📐 AspectRatio: ${_controller!.value.aspectRatio}');
         print('📱 VideoSize: ${_controller!.value.size}');
+        print('🔊 초기 볼륨: $_volume');
       }
     } catch (e) {
       print('🚨 비디오 초기화 에러: $e');
@@ -98,9 +102,10 @@ class _VideoModalState extends State<VideoModal> {
 
   void _startControlsTimer() {
     Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) {
+      if (mounted && _showControls) {
         setState(() {
           _showControls = false;
+          _showVolumeSlider = false; // 컨트롤 숨길 때 볼륨 슬라이더도 숨김
         });
       }
     });
@@ -109,6 +114,9 @@ class _VideoModalState extends State<VideoModal> {
   void _toggleControls() {
     setState(() {
       _showControls = !_showControls;
+      if (!_showControls) {
+        _showVolumeSlider = false; // 컨트롤 숨길 때 볼륨 슬라이더도 숨김
+      }
     });
 
     if (_showControls) {
@@ -116,48 +124,130 @@ class _VideoModalState extends State<VideoModal> {
     }
   }
 
-  void _togglePlayPause() {
+  Future<void> _togglePlayPause() async {
+    print('🎮 재생/일시정지 버튼 클릭됨');
+
     if (_controller != null && _controller!.value.isInitialized) {
-      if (_controller!.value.isPlaying) {
-        _controller!.pause();
-      } else {
-        _controller!.play();
+      try {
+        if (_controller!.value.isPlaying) {
+          await _controller!.pause();
+          print('⏸️ 비디오 일시정지 완료');
+        } else {
+          await _controller!.play();
+          print('▶️ 비디오 재생 시작 완료');
+        }
+
+        // 상태 변경 후 UI 업데이트
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (e) {
+        print('🚨 재생/일시정지 에러: $e');
       }
-      setState(() {});
+    } else {
+      print('🚨 VideoController가 초기화되지 않음');
     }
   }
 
-  void _seekTo(Duration position) {
-    _controller?.seekTo(position);
+  Future<void> _seekTo(Duration position) async {
+    try {
+      await _controller?.seekTo(position);
+      print('⏭️ 시간 이동: ${_formatDuration(position)}');
+    } catch (e) {
+      print('🚨 시간 이동 에러: $e');
+    }
   }
 
   void _skipBackward() {
-    if (_controller != null) {
+    print('⏪ 되감기 버튼 클릭됨');
+    if (_controller != null && _controller!.value.isInitialized) {
       final current = _controller!.value.position;
       final newPosition = current - const Duration(seconds: 10);
-      _seekTo(newPosition > Duration.zero ? newPosition : Duration.zero);
+      final targetPosition = newPosition > Duration.zero
+          ? newPosition
+          : Duration.zero;
+      _seekTo(targetPosition);
     }
   }
 
   void _skipForward() {
-    if (_controller != null) {
+    print('⏩ 빨리감기 버튼 클릭됨');
+    if (_controller != null && _controller!.value.isInitialized) {
       final current = _controller!.value.position;
       final duration = _controller!.value.duration;
       final newPosition = current + const Duration(seconds: 10);
-      _seekTo(newPosition < duration ? newPosition : duration);
+      final targetPosition = newPosition < duration ? newPosition : duration;
+      _seekTo(targetPosition);
+    }
+  }
+
+  // 🔊 볼륨 조절 기능
+  Future<void> _setVolume(double volume) async {
+    if (_controller != null && _controller!.value.isInitialized) {
+      try {
+        await _controller!.setVolume(volume);
+        setState(() {
+          _volume = volume;
+        });
+        print('🔊 볼륨 변경: ${(volume * 100).toInt()}%');
+      } catch (e) {
+        print('🚨 볼륨 설정 에러: $e');
+      }
+    }
+  }
+
+  void _toggleVolumeSlider() {
+    print('🔊 볼륨 버튼 클릭됨');
+
+    setState(() {
+      _showVolumeSlider = !_showVolumeSlider;
+      print('🔊 볼륨 슬라이더 표시: $_showVolumeSlider');
+    });
+
+    // 볼륨 슬라이더 표시 시 컨트롤도 표시
+    if (_showVolumeSlider && !_showControls) {
+      setState(() {
+        _showControls = true;
+      });
+    }
+
+    // 컨트롤 타이머 재시작
+    if (_showControls) {
+      _startControlsTimer();
     }
   }
 
   Future<void> _openInBrowser() async {
+    print('🌐 브라우저 열기 버튼 클릭됨');
     final videoUrl = widget.videoUrl ?? widget.movie?.videoUrl;
     if (videoUrl != null) {
       try {
         final uri = Uri.parse(videoUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
+          print('🌐 브라우저에서 열기: $videoUrl');
+        } else {
+          print('🚨 브라우저에서 열 수 없는 URL: $videoUrl');
         }
       } catch (e) {
-        print('브라우저 열기 실패: $e');
+        print('🚨 브라우저 열기 실패: $e');
+      }
+    }
+  }
+
+  // 🚪 모달 닫기
+  void _closeModal() {
+    print('❌ 닫기 버튼 클릭됨');
+    try {
+      print('🚪 VideoModal 닫기');
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      print('🚨 모달 닫기 에러: $e');
+      // 강제 종료 시도
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
       }
     }
   }
@@ -167,6 +257,12 @@ class _VideoModalState extends State<VideoModal> {
     String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
     String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
     return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
+  }
+
+  IconData _getVolumeIconData() {
+    if (_volume == 0) return Icons.volume_off;
+    if (_volume < 0.5) return Icons.volume_down;
+    return Icons.volume_up;
   }
 
   // 헬퍼 메서드들
@@ -179,25 +275,35 @@ class _VideoModalState extends State<VideoModal> {
   Widget build(BuildContext context) {
     return Dialog.fullscreen(
       backgroundColor: Colors.black,
-      child: Stack(
-        children: [
-          // 비디오 플레이어 영역 (이전 성공 방식)
-          Center(child: _buildVideoContent()),
+      child: WillPopScope(
+        onWillPop: () async {
+          _closeModal();
+          return false; // 기본 뒤로가기 동작 방지
+        },
+        child: Stack(
+          children: [
+            // 비디오 플레이어 영역 (이전 성공 방식)
+            Center(child: _buildVideoContent()),
 
-          // 상단 영화 정보 오버레이
-          if (_showControls) _buildTopOverlay(),
+            // 상단 영화 정보 오버레이
+            if (_showControls) _buildTopOverlay(),
 
-          // 하단 컨트롤 오버레이
-          if (_showControls) _buildBottomOverlay(),
+            // 하단 컨트롤 오버레이
+            if (_showControls) _buildBottomOverlay(),
 
-          // 터치 감지 영역
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _toggleControls,
-              behavior: HitTestBehavior.translucent,
-            ),
-          ),
-        ],
+            // 볼륨 슬라이더 (오른쪽에 표시)
+            if (_showVolumeSlider) _buildVolumeSlider(),
+
+            // 터치 감지 영역 (조건부)
+            if (!(_showControls && _showVolumeSlider))
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: _toggleControls,
+                  behavior: HitTestBehavior.translucent,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -341,9 +447,14 @@ class _VideoModalState extends State<VideoModal> {
                     ],
                   ),
                 ),
+                // 닫기 버튼 (이전 성공 방식 - IconButton 직접 사용)
                 IconButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: _closeModal,
                   icon: Icon(Icons.close, color: Colors.white, size: 28),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.5),
+                    padding: EdgeInsets.all(8),
+                  ),
                 ),
               ],
             ),
@@ -450,7 +561,7 @@ class _VideoModalState extends State<VideoModal> {
 
             const SizedBox(height: 16),
 
-            // 컨트롤 버튼들
+            // 컨트롤 버튼들 (이전 성공 방식 - IconButton 직접 사용)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -458,17 +569,27 @@ class _VideoModalState extends State<VideoModal> {
                 IconButton(
                   onPressed: _skipBackward,
                   icon: Icon(Icons.replay_10, color: Colors.white, size: 32),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.3),
+                    padding: EdgeInsets.all(12),
+                  ),
                 ),
 
-                // 재생/일시정지
+                // 재생/일시정지 (이전 성공 방식)
                 IconButton(
                   onPressed: _togglePlayPause,
                   icon: Icon(
                     _controller?.value.isPlaying == true
                         ? Icons.pause_circle_filled
                         : Icons.play_circle_filled,
-                    color: Color(AppConstants.primaryColorValue),
+                    color: Colors.white,
                     size: 48,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Color(
+                      AppConstants.primaryColorValue,
+                    ).withValues(alpha: 0.8),
+                    padding: EdgeInsets.all(8),
                   ),
                 ),
 
@@ -476,6 +597,28 @@ class _VideoModalState extends State<VideoModal> {
                 IconButton(
                   onPressed: _skipForward,
                   icon: Icon(Icons.forward_10, color: Colors.white, size: 32),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.3),
+                    padding: EdgeInsets.all(12),
+                  ),
+                ),
+
+                // 볼륨 버튼 (이전 성공 방식)
+                IconButton(
+                  onPressed: _toggleVolumeSlider,
+                  icon: Icon(
+                    _getVolumeIconData(),
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: _showVolumeSlider
+                        ? Color(
+                            AppConstants.primaryColorValue,
+                          ).withValues(alpha: 0.5)
+                        : Colors.black.withValues(alpha: 0.3),
+                    padding: EdgeInsets.all(12),
+                  ),
                 ),
 
                 // 외부에서 열기 버튼
@@ -486,11 +629,15 @@ class _VideoModalState extends State<VideoModal> {
                     color: Colors.white,
                     size: 28,
                   ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.3),
+                    padding: EdgeInsets.all(12),
+                  ),
                 ),
               ],
             ),
 
-            // 재생 시간 표시
+            // 재생 시간 및 볼륨 표시
             if (_controller != null && _controller!.value.isInitialized)
               Container(
                 margin: const EdgeInsets.only(top: 8),
@@ -523,9 +670,118 @@ class _VideoModalState extends State<VideoModal> {
                         ],
                       ),
                     ),
+                    const SizedBox(width: 16),
+                    // 현재 볼륨 표시
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _getVolumeIconData(),
+                            color: Colors.white,
+                            size: 12,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            "${(_volume * 100).toInt()}%",
+                            style: TextStyle(color: Colors.white, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🔊 볼륨 슬라이더 위젯
+  Widget _buildVolumeSlider() {
+    return Positioned(
+      right: 20,
+      top: MediaQuery.of(context).size.height * 0.3,
+      bottom: MediaQuery.of(context).size.height * 0.3,
+      child: Container(
+        width: 60,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // 볼륨 최대 버튼 (이전 성공 방식)
+            IconButton(
+              onPressed: () {
+                print('🔊 최대 볼륨 버튼 클릭됨');
+                _setVolume(1.0);
+              },
+              icon: Icon(Icons.volume_up, color: Colors.white, size: 24),
+            ),
+
+            // 볼륨 슬라이더
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: RotatedBox(
+                  quarterTurns: -1, // 세로로 회전
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: Color(AppConstants.primaryColorValue),
+                      inactiveTrackColor: Colors.grey[600],
+                      thumbColor: Color(AppConstants.primaryColorValue),
+                      thumbShape: RoundSliderThumbShape(enabledThumbRadius: 8),
+                      overlayShape: RoundSliderOverlayShape(overlayRadius: 16),
+                      trackHeight: 4,
+                    ),
+                    child: Slider(
+                      value: _volume,
+                      min: 0.0,
+                      max: 1.0,
+                      divisions: 20,
+                      onChanged: _setVolume,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // 볼륨 최소 버튼 (이전 성공 방식)
+            IconButton(
+              onPressed: () {
+                print('🔇 음소거 버튼 클릭됨');
+                _setVolume(0.0);
+              },
+              icon: Icon(Icons.volume_off, color: Colors.white, size: 24),
+            ),
+
+            // 볼륨 퍼센트 표시
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '${(_volume * 100).toInt()}%',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           ],
         ),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/movie_api_service.dart';
 import '../services/translation_service.dart';
+import '../services/speech_service.dart'; // 음성인식 서비스 추가
 import '../models/movie_result.dart';
 import '../models/search_history.dart';
 import '../widgets/header_section.dart';
@@ -45,6 +46,75 @@ class _MoviePhraseScreenState extends State<MoviePhraseScreen> {
     _pageController.dispose();
     _apiService.dispose();
     super.dispose();
+  }
+
+  // 🔄 앱 초기화 메서드 추가
+  Future<void> _resetApp() async {
+    print('🔄 앱 전체 초기화 시작...');
+
+    try {
+      setState(() {
+        _isLoading = true;
+        _loadingMessage = '앱 초기화 중...';
+      });
+
+      // 1. 음성인식 서비스 완전 정리 및 재시작
+      print('🎤 음성인식 서비스 초기화...');
+      final speechService = SpeechService();
+      speechService.dispose(); // 기존 서비스 정리
+      await Future.delayed(const Duration(milliseconds: 500)); // 정리 시간
+      await speechService.initialize(); // 재초기화
+      print('✅ 음성인식 서비스 재시작 완료');
+
+      // 2. API 서비스 정리
+      _apiService.dispose();
+      print('🧹 API 서비스 정리 완료');
+
+      // 3. 모든 상태 초기화
+      _movies.clear();
+      _searchHistory.clear();
+      _statistics.clear();
+      _currentQuery = '';
+      _originalQuery = '';
+      _currentPage = 0;
+      _isTranslating = false;
+      print('🔄 상태 초기화 완료');
+
+      // 4. 페이지 컨트롤러 초기화 (홈으로 이동)
+      if (_pageController.hasClients) {
+        _pageController.animateToPage(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+      print('🏠 홈 화면으로 이동 완료');
+
+      // 5. 잠시 대기 (서비스 정리 시간)
+      await Future.delayed(const Duration(milliseconds: 1000));
+
+      // 6. 초기 데이터 다시 로딩
+      await _loadInitialData();
+
+      print('✅ 앱 초기화 완료');
+    } catch (e) {
+      print('🚨 앱 초기화 에러: $e');
+      // 에러 발생시에도 기본 상태로 복구
+      setState(() {
+        _movies.clear();
+        _searchHistory.clear();
+        _statistics.clear();
+        _currentQuery = '';
+        _originalQuery = '';
+        _currentPage = 0;
+        _isTranslating = false;
+        _isLoading = false;
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -316,8 +386,8 @@ class _MoviePhraseScreenState extends State<MoviePhraseScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // 헤더 섹션
-            const HeaderSection(),
+            // 헤더 섹션 - onReset 콜백 추가
+            HeaderSection(onReset: _resetApp),
 
             // 페이지 뷰
             Expanded(

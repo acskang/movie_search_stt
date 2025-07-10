@@ -57,10 +57,12 @@ class _SearchSectionState extends State<SearchSection> {
     }
   }
 
+  // 🔍 모든 검색 요청에 대해 확인 절차를 거침
   void _performSearch() {
     final query = _controller.text.trim();
     if (query.isNotEmpty && !widget.isLoading) {
-      widget.onSearch(query);
+      // 텍스트 확인 다이얼로그 표시 (키보드 입력)
+      _showInputConfirmationDialog(query, false);
       _focusNode.unfocus();
     }
   }
@@ -73,18 +75,17 @@ class _SearchSectionState extends State<SearchSection> {
         _isListening = true;
       });
 
-      // 한국어로 음성 인식 시작 (11.5초로 연장)
+      // 한국어로 음성 인식 시작 (30초, 침묵 4초 시 자동 종료)
       final result = await _speechService.startListening(
         language: 'ko-KR',
-        timeout: const Duration(seconds: 11, milliseconds: 500), // 1.5초 연장
+        timeout: const Duration(seconds: 30),
       );
 
       if (result != null && result.isNotEmpty) {
-        _controller.text = result;
         print('🎤 음성 인식 결과: $result');
 
-        // 자동으로 검색 실행
-        widget.onSearch(result);
+        // 음성인식 결과 확인 다이얼로그 표시
+        _showInputConfirmationDialog(result, true);
       } else {
         _showSnackBar('음성이 인식되지 않았습니다. 다시 시도해주세요.');
       }
@@ -98,13 +99,344 @@ class _SearchSectionState extends State<SearchSection> {
     }
   }
 
+  // 📋 모든 입력에 대한 통합 확인 다이얼로그
+  void _showInputConfirmationDialog(String inputText, bool isFromSpeech) {
+    // 한국어인지 확인
+    final isKorean = widget.translationService?.isKorean(inputText) ?? false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false, // 뒤로가기로 닫기 방지
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: AppConstants.cardColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                isFromSpeech ? Icons.mic : Icons.keyboard,
+                color: AppConstants.primaryColor,
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isFromSpeech ? '음성인식 결과 확인' : '검색어 확인',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isFromSpeech ? '다음과 같이 인식되었습니다:' : '다음 검색어로 영화를 찾으시겠습니까?',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 입력된 텍스트 표시
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isKorean
+                      ? Colors.orange.withValues(alpha: 0.1)
+                      : AppConstants.primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isKorean
+                        ? Colors.orange.withValues(alpha: 0.3)
+                        : AppConstants.primaryColor.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          isFromSpeech
+                              ? (isKorean ? Icons.record_voice_over : Icons.mic)
+                              : (isKorean ? Icons.translate : Icons.language),
+                          color: isKorean
+                              ? Colors.orange[300]
+                              : Colors.blue[300],
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isFromSpeech
+                              ? (isKorean ? '🎤 한국어 음성인식' : '🎤 영어 음성인식')
+                              : (isKorean ? '⌨️ 한국어 키보드 입력' : '⌨️ 영어 키보드 입력'),
+                          style: TextStyle(
+                            color: isKorean
+                                ? Colors.orange[300]
+                                : Colors.blue[300],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '"$inputText"',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 번역 결과 표시 (한국어인 경우만)
+              if (isKorean) ...[
+                const SizedBox(height: 12),
+
+                // 번역 화살표
+                Center(
+                  child: Icon(
+                    Icons.arrow_downward,
+                    color: Colors.grey[400],
+                    size: 20,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // 번역된 영어 결과
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.blue.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.language,
+                            color: Colors.blue[300],
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '🇺🇸 영어 번역 (검색에 사용됨)',
+                            style: TextStyle(
+                              color: Colors.blue[300],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // 번역 결과 또는 로딩 표시
+                      FutureBuilder<String?>(
+                        future: widget.translationService?.translateToEnglish(
+                          inputText,
+                        ),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return Row(
+                              children: [
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.blue[300],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '번역 중...',
+                                  style: TextStyle(
+                                    color: Colors.blue[300],
+                                    fontSize: 14,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            );
+                          } else if (snapshot.hasError || !snapshot.hasData) {
+                            return Text(
+                              '"번역 실패 - 원문 사용"',
+                              style: TextStyle(
+                                color: Colors.red[300],
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          } else {
+                            return Text(
+                              '"${snapshot.data}"',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+              ] else ...[
+                const SizedBox(height: 16),
+              ],
+
+              // 데이터 품질 안내 메시지
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.green.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.verified, color: Colors.green[300], size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '데이터 품질 향상을 위해 모든 검색어를 확인합니다.',
+                        style: TextStyle(
+                          color: Colors.green[300],
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              Text(
+                '이 텍스트로 검색하시겠습니까?',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            // No 버튼 (빨간색) - 더 명확한 레이블
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _handleInputRejection(isFromSpeech);
+              },
+              icon: Icon(Icons.edit, color: Colors.red[400]),
+              label: Text(
+                isFromSpeech ? '다시 인식' : '수정하기',
+                style: TextStyle(
+                  color: Colors.red[400],
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+              ),
+            ),
+
+            // Yes 버튼 (초록색)
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _handleInputConfirmation(inputText, isFromSpeech);
+              },
+              icon: Icon(Icons.search, size: 18),
+              label: Text('검색하기'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ 사용자가 입력 결과를 확인한 경우
+  void _handleInputConfirmation(String inputText, bool isFromSpeech) {
+    print('✅ 사용자가 ${isFromSpeech ? "음성인식" : "키보드 입력"} 결과 확인: "$inputText"');
+
+    // 텍스트 필드에 입력 (음성인식인 경우만)
+    if (isFromSpeech) {
+      _controller.text = inputText;
+    }
+
+    // 성공 메시지 표시
+    _showSnackBar('✅ 검색을 시작합니다.');
+
+    // 백엔드로 검색 실행
+    widget.onSearch(inputText);
+  }
+
+  // ❌ 사용자가 입력 결과를 거부한 경우
+  void _handleInputRejection(bool isFromSpeech) {
+    print('❌ 사용자가 ${isFromSpeech ? "음성인식" : "키보드 입력"} 결과 거부');
+
+    if (isFromSpeech) {
+      // 음성인식인 경우: 텍스트 필드 초기화
+      _controller.clear();
+      _showSnackBar('🎤 음성인식을 다시 시도해주세요.');
+    } else {
+      // 키보드 입력인 경우: 텍스트 필드에 포커스
+      _focusNode.requestFocus();
+      _showSnackBar('✏️ 검색어를 수정해주세요.');
+    }
+  }
+
   void _showSnackBar(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
           duration: const Duration(seconds: 3),
-          backgroundColor: Colors.orange[700],
+          backgroundColor: message.startsWith('✅')
+              ? Colors.green[700]
+              : message.startsWith('🎤') || message.startsWith('✏️')
+              ? Colors.orange[700]
+              : Colors.orange[700],
         ),
       );
     }
@@ -207,7 +539,7 @@ class _SearchSectionState extends State<SearchSection> {
                     // 음성 인식 버튼
                     Tooltip(
                       message: _speechInitialized
-                          ? '음성으로 검색 (한국어, 11.5초)'
+                          ? '음성으로 검색 (한국어, 최대 30초, 침묵 4초 시 자동 종료)\n인식 후 확인 단계를 거칩니다'
                           : '음성 인식 사용 불가',
                       child: IconButton(
                         onPressed: _speechInitialized && !widget.isLoading
@@ -274,7 +606,7 @@ class _SearchSectionState extends State<SearchSection> {
 
           const SizedBox(height: 12),
 
-          // 검색 팁
+          // 검색 팁 (업데이트됨)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -295,7 +627,7 @@ class _SearchSectionState extends State<SearchSection> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '💡 한국어로 입력하면 자동으로 영어로 번역하여 검색합니다!\n🎤 마이크 버튼을 눌러 음성으로도 검색 가능합니다. (11.5초)',
+                    '💡 데이터 품질 향상을 위해 모든 검색어를 확인합니다!\n🎤 음성인식 및 ⌨️ 키보드 입력 모두 확인 절차를 거칩니다.',
                     style: TextStyle(color: Colors.blue[300], fontSize: 12),
                   ),
                 ),

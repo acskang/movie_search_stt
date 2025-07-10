@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 
@@ -10,6 +11,12 @@ class SpeechService {
   bool _isListening = false;
   bool _isAvailable = false;
   String _lastWords = '';
+
+  // 침묵 감지 관련 변수들
+  Timer? _silenceTimer;
+  DateTime? _lastSpeechTime;
+  String _lastRecognizedText = '';
+  bool _speechDetected = false;
 
   bool get isListening => _isListening;
   bool get isAvailable => _isAvailable;
@@ -30,11 +37,15 @@ class SpeechService {
       _isAvailable = await _speech.initialize(
         onError: (error) {
           print('🚨 음성 인식 에러: ${error.errorMsg}');
+          _stopSilenceDetection();
           _isListening = false;
         },
         onStatus: (status) {
           print('📊 음성 인식 상태: $status');
           _isListening = status == 'listening';
+          if (!_isListening) {
+            _stopSilenceDetection();
+          }
         },
       );
 
@@ -76,9 +87,85 @@ class SpeechService {
     }
   }
 
+  // 침묵 감지 시작
+  void _startSilenceDetection() {
+    _stopSilenceDetection(); // 기존 타이머 정리
+
+    _lastSpeechTime = DateTime.now();
+    _speechDetected = false;
+    _lastRecognizedText = '';
+
+    print('🔇 침묵 감지 시작 (4초 침묵 시 자동 종료)');
+
+    _silenceTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (!_isListening) {
+        timer.cancel();
+        return;
+      }
+
+      final now = DateTime.now();
+      final timeSinceLastSpeech = _lastSpeechTime != null
+          ? now.difference(_lastSpeechTime!).inMilliseconds
+          : 0;
+
+      // 음성이 한 번이라도 감지되었고, 4초 동안 침묵이면 자동 종료
+      if (_speechDetected && timeSinceLastSpeech > 4000) {
+        print('🔇 4초 침묵 감지 - 음성인식 자동 종료');
+        print('📊 최종 인식 결과: "$_lastWords"');
+        timer.cancel();
+        _autoStopListening();
+      }
+    });
+  }
+
+  // 침묵 감지 중지
+  void _stopSilenceDetection() {
+    _silenceTimer?.cancel();
+    _silenceTimer = null;
+  }
+
+  // 음성 활동 감지 업데이트
+  void _updateSpeechActivity(String recognizedText, double soundLevel) {
+    final now = DateTime.now();
+
+    // 새로운 텍스트가 인식되었거나 소리 레벨이 높으면 음성 활동으로 간주
+    bool hasNewText =
+        recognizedText.isNotEmpty && recognizedText != _lastRecognizedText;
+    bool hasSoundActivity = soundLevel > -30.0; // dB 기준 (조정 가능)
+
+    if (hasNewText || hasSoundActivity) {
+      _lastSpeechTime = now;
+      _speechDetected = true;
+
+      if (hasNewText) {
+        _lastRecognizedText = recognizedText;
+        print('🎯 새로운 음성 인식: "$recognizedText"');
+      }
+
+      if (hasSoundActivity) {
+        print('🔊 음성 활동 감지: ${soundLevel.toStringAsFixed(1)}dB');
+      }
+    }
+  }
+
+  // 자동 중지 (침묵 감지로 인한)
+  Future<void> _autoStopListening() async {
+    try {
+      if (_isListening) {
+        await _speech.stop();
+        _stopSilenceDetection();
+        _isListening = false;
+        print('✅ 침묵 감지로 음성 인식 자동 완료');
+      }
+    } catch (e) {
+      print('🚨 자동 음성 인식 중지 에러: $e');
+      _isListening = false;
+    }
+  }
+
   Future<String?> startListening({
     String language = 'ko-KR',
-    Duration timeout = const Duration(seconds: 10),
+    Duration timeout = const Duration(seconds: 30), // 30초로 연장
   }) async {
     try {
       if (!_isAvailable) {
@@ -94,20 +181,40 @@ class SpeechService {
       }
 
       _lastWords = '';
+      _lastRecognizedText = '';
+      _speechDetected = false;
 
-      print('🎤 음성 인식 시작 - 언어: $language');
+      print(
+        '🎤 음성 인식 시작 - 언어: $language (최대 ${timeout.inSeconds}초, 침묵 4초 시 자동 종료)',
+      );
+
+      // 침묵 감지 시작
+      _startSilenceDetection();
 
       await _speech.listen(
         onResult: (result) {
           _lastWords = result.recognizedWords;
-          print('🗣️ 인식된 텍스트: $_lastWords');
+
+          // 음성 활동 업데이트 (텍스트 기반)
+          _updateSpeechActivity(_lastWords, 0.0);
+
+          print('🗣️ 인식된 텍스트: "$_lastWords"');
+          print('📊 신뢰도: ${(result.confidence * 100).toStringAsFixed(1)}%');
+
+          // 최종 결과인 경우 자동 종료
+          if (result.finalResult && _lastWords.isNotEmpty) {
+            print('✅ 최종 결과 확정 - 음성인식 완료');
+            _autoStopListening();
+          }
         },
-        listenFor: timeout,
-        pauseFor: const Duration(seconds: 3),
-        partialResults: true,
+        listenFor: timeout, // 30초로 연장
+        pauseFor: const Duration(seconds: 8), // Android 일시정지 시간도 연장
+        partialResults: true, // 실시간 결과 중요!
         localeId: language,
+        cancelOnError: true,
         onSoundLevelChange: (level) {
-          // 음성 레벨 로깅 (선택사항)
+          // 음성 활동 업데이트 (소리 레벨 기반)
+          _updateSpeechActivity(_lastWords, level);
         },
       );
 
@@ -116,10 +223,18 @@ class SpeechService {
         await Future.delayed(const Duration(milliseconds: 100));
       }
 
-      print('✅ 음성 인식 완료: $_lastWords');
-      return _lastWords.isNotEmpty ? _lastWords : null;
+      _stopSilenceDetection(); // 정리
+
+      if (_lastWords.isNotEmpty) {
+        print('✅ 음성 인식 완료: "$_lastWords"');
+        return _lastWords;
+      } else {
+        print('⚠️ 음성이 인식되지 않았습니다');
+        return null;
+      }
     } catch (e) {
       print('🚨 음성 인식 에러: $e');
+      _stopSilenceDetection();
       _isListening = false;
       return null;
     }
@@ -128,18 +243,21 @@ class SpeechService {
   Future<void> stopListening() async {
     try {
       if (_isListening) {
+        _stopSilenceDetection();
         await _speech.stop();
         _isListening = false;
-        print('⏹️ 음성 인식 중지');
+        print('⏹️ 음성 인식 수동 중지');
       }
     } catch (e) {
       print('🚨 음성 인식 중지 에러: $e');
+      _stopSilenceDetection();
       _isListening = false;
     }
   }
 
   Future<void> cancel() async {
     try {
+      _stopSilenceDetection();
       await _speech.cancel();
       _isListening = false;
       _lastWords = '';
@@ -171,6 +289,7 @@ class SpeechService {
 
   void dispose() {
     try {
+      _stopSilenceDetection();
       _speech.cancel();
       _isListening = false;
       _lastWords = '';
