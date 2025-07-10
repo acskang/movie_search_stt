@@ -12,11 +12,12 @@ class SpeechService {
   bool _isAvailable = false;
   String _lastWords = '';
 
-  // 침묵 감지 관련 변수들
+  // 침묵 감지 관련 변수들 (개선)
   Timer? _silenceTimer;
   DateTime? _lastSpeechTime;
   String _lastRecognizedText = '';
   bool _speechDetected = false;
+  int _consecutiveSameResults = 0; // 동일한 결과 반복 횟수
 
   bool get isListening => _isListening;
   bool get isAvailable => _isAvailable;
@@ -87,15 +88,16 @@ class SpeechService {
     }
   }
 
-  // 침묵 감지 시작
+  // 🔧 개선된 침묵 감지 시작
   void _startSilenceDetection() {
     _stopSilenceDetection(); // 기존 타이머 정리
 
     _lastSpeechTime = DateTime.now();
     _speechDetected = false;
     _lastRecognizedText = '';
+    _consecutiveSameResults = 0;
 
-    print('🔇 침묵 감지 시작 (4초 침묵 시 자동 종료)');
+    print('🔇 침묵 감지 시작 (6초 침묵 시 자동 종료)'); // 4초 → 6초로 증가
 
     _silenceTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
       if (!_isListening) {
@@ -108,9 +110,12 @@ class SpeechService {
           ? now.difference(_lastSpeechTime!).inMilliseconds
           : 0;
 
-      // 음성이 한 번이라도 감지되었고, 4초 동안 침묵이면 자동 종료
-      if (_speechDetected && timeSinceLastSpeech > 4000) {
-        print('🔇 4초 침묵 감지 - 음성인식 자동 종료');
+      // 🔧 조건 강화: 음성이 감지되고, 6초 침묵이고, 동일한 결과가 3번 이상 반복되면 종료
+      if (_speechDetected &&
+          timeSinceLastSpeech > 6000 && // 4초 → 6초로 증가
+          _consecutiveSameResults >= 3 && // 안정성 확보
+          _lastWords.trim().isNotEmpty) {
+        print('🔇 6초 침묵 + 안정된 결과 감지 - 음성인식 자동 종료');
         print('📊 최종 인식 결과: "$_lastWords"');
         timer.cancel();
         _autoStopListening();
@@ -124,22 +129,28 @@ class SpeechService {
     _silenceTimer = null;
   }
 
-  // 음성 활동 감지 업데이트
+  // 🔧 개선된 음성 활동 감지 업데이트
   void _updateSpeechActivity(String recognizedText, double soundLevel) {
     final now = DateTime.now();
 
     // 새로운 텍스트가 인식되었거나 소리 레벨이 높으면 음성 활동으로 간주
     bool hasNewText =
         recognizedText.isNotEmpty && recognizedText != _lastRecognizedText;
-    bool hasSoundActivity = soundLevel > -30.0; // dB 기준 (조정 가능)
+    bool hasSoundActivity = soundLevel > -25.0; // -30dB → -25dB로 조정 (더 민감하게)
 
     if (hasNewText || hasSoundActivity) {
       _lastSpeechTime = now;
       _speechDetected = true;
 
       if (hasNewText) {
-        _lastRecognizedText = recognizedText;
-        print('🎯 새로운 음성 인식: "$recognizedText"');
+        // 🔧 동일한 결과 반복 횟수 체크
+        if (recognizedText == _lastRecognizedText) {
+          _consecutiveSameResults++;
+        } else {
+          _consecutiveSameResults = 1;
+          _lastRecognizedText = recognizedText;
+          print('🎯 새로운 음성 인식: "$recognizedText"');
+        }
       }
 
       if (hasSoundActivity) {
@@ -165,7 +176,7 @@ class SpeechService {
 
   Future<String?> startListening({
     String language = 'ko-KR',
-    Duration timeout = const Duration(seconds: 30), // 30초로 연장
+    Duration timeout = const Duration(seconds: 20), // 30초 → 20초로 적정화
   }) async {
     try {
       if (!_isAvailable) {
@@ -183,9 +194,10 @@ class SpeechService {
       _lastWords = '';
       _lastRecognizedText = '';
       _speechDetected = false;
+      _consecutiveSameResults = 0;
 
       print(
-        '🎤 음성 인식 시작 - 언어: $language (최대 ${timeout.inSeconds}초, 침묵 4초 시 자동 종료)',
+        '🎤 음성 인식 시작 - 언어: $language (최대 ${timeout.inSeconds}초, 침묵 6초 시 자동 종료)',
       );
 
       // 침묵 감지 시작
@@ -200,16 +212,17 @@ class SpeechService {
 
           print('🗣️ 인식된 텍스트: "$_lastWords"');
           print('📊 신뢰도: ${(result.confidence * 100).toStringAsFixed(1)}%');
+          print('🔄 최종결과: ${result.finalResult}');
 
-          // 최종 결과인 경우 자동 종료
-          if (result.finalResult && _lastWords.isNotEmpty) {
-            print('✅ 최종 결과 확정 - 음성인식 완료');
-            _autoStopListening();
-          }
+          // 🔧 finalResult 자동 종료 제거 - 너무 성급한 종료 방지
+          // if (result.finalResult && _lastWords.isNotEmpty) {
+          //   print('✅ 최종 결과 확정 - 음성인식 완료');
+          //   _autoStopListening();
+          // }
         },
-        listenFor: timeout, // 30초로 연장
-        pauseFor: const Duration(seconds: 8), // Android 일시정지 시간도 연장
-        partialResults: true, // 실시간 결과 중요!
+        listenFor: timeout,
+        pauseFor: const Duration(seconds: 3), // 8초 → 3초로 단축 (중요!)
+        partialResults: true, // 실시간 결과 유지
         localeId: language,
         cancelOnError: true,
         onSoundLevelChange: (level) {

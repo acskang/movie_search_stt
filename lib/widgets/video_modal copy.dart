@@ -101,23 +101,27 @@ class _VideoModalState extends State<VideoModal> {
   }
 
   void _startControlsTimer() {
-    // 🔧 컨트롤 자동 숨김 기능 제거 - 항상 표시
-    // Future.delayed(const Duration(seconds: 5), () {
-    //   if (mounted && _showControls) {
-    //     setState(() {
-    //       _showControls = false;
-    //       _showVolumeSlider = false;
-    //     });
-    //   }
-    // });
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted && _showControls) {
+        setState(() {
+          _showControls = false;
+          _showVolumeSlider = false; // 컨트롤 숨길 때 볼륨 슬라이더도 숨김
+        });
+      }
+    });
   }
 
   void _toggleControls() {
-    print('📱 터치 감지 - 볼륨 슬라이더 토글');
-    // 🔧 컨트롤은 항상 표시, 볼륨 슬라이더만 토글
     setState(() {
-      _showVolumeSlider = !_showVolumeSlider;
+      _showControls = !_showControls;
+      if (!_showControls) {
+        _showVolumeSlider = false; // 컨트롤 숨길 때 볼륨 슬라이더도 숨김
+      }
     });
+
+    if (_showControls) {
+      _startControlsTimer();
+    }
   }
 
   Future<void> _togglePlayPause() async {
@@ -200,7 +204,17 @@ class _VideoModalState extends State<VideoModal> {
       print('🔊 볼륨 슬라이더 표시: $_showVolumeSlider');
     });
 
-    // 🔧 컨트롤은 항상 표시되므로 타이머 관련 코드 제거
+    // 볼륨 슬라이더 표시 시 컨트롤도 표시
+    if (_showVolumeSlider && !_showControls) {
+      setState(() {
+        _showControls = true;
+      });
+    }
+
+    // 컨트롤 타이머 재시작
+    if (_showControls) {
+      _startControlsTimer();
+    }
   }
 
   Future<void> _openInBrowser() async {
@@ -261,43 +275,33 @@ class _VideoModalState extends State<VideoModal> {
   Widget build(BuildContext context) {
     return Dialog.fullscreen(
       backgroundColor: Colors.black,
-      child: PopScope(
-        canPop: false, // 기본 뒤로가기 동작 방지
-        onPopInvokedWithResult: (bool didPop, Object? result) {
-          if (!didPop) {
-            _closeModal();
-          }
+      child: WillPopScope(
+        onWillPop: () async {
+          _closeModal();
+          return false; // 기본 뒤로가기 동작 방지
         },
         child: Stack(
           children: [
-            // 1. 비디오 플레이어 영역 (가장 아래)
+            // 비디오 플레이어 영역 (이전 성공 방식)
             Center(child: _buildVideoContent()),
 
-            // 2. 🔧 터치 감지 영역 - 볼륨 슬라이더가 없을 때만 비디오 영역에서 슬라이더 토글
-            if (!_showVolumeSlider)
-              Positioned(
-                top: 120, // 상단 오버레이 아래
-                bottom: 180, // 하단 오버레이 위
-                left: 20,
-                right: 20,
+            // 상단 영화 정보 오버레이
+            if (_showControls) _buildTopOverlay(),
+
+            // 하단 컨트롤 오버레이
+            if (_showControls) _buildBottomOverlay(),
+
+            // 볼륨 슬라이더 (오른쪽에 표시)
+            if (_showVolumeSlider) _buildVolumeSlider(),
+
+            // 터치 감지 영역 (조건부)
+            if (!(_showControls && _showVolumeSlider))
+              Positioned.fill(
                 child: GestureDetector(
-                  onTap: () {
-                    print('📱 비디오 영역 터치 - 볼륨 슬라이더 표시');
-                    _toggleControls();
-                  },
+                  onTap: _toggleControls,
                   behavior: HitTestBehavior.translucent,
-                  child: Container(color: Colors.transparent),
                 ),
               ),
-
-            // 3. 상단 영화 정보 오버레이 (항상 표시)
-            _buildTopOverlay(),
-
-            // 4. 하단 컨트롤 오버레이 (항상 표시)
-            _buildBottomOverlay(),
-
-            // 5. 볼륨 슬라이더 (표시 시에만)
-            if (_showVolumeSlider) _buildVolumeSlider(),
           ],
         ),
       ),
@@ -443,20 +447,13 @@ class _VideoModalState extends State<VideoModal> {
                     ],
                   ),
                 ),
-                // 🔧 닫기 버튼 - 단순하고 작게 수정
-                Container(
-                  margin: EdgeInsets.all(4),
-                  child: IconButton(
-                    onPressed: () {
-                      print('❌ 닫기 버튼 터치됨');
-                      _closeModal();
-                    },
-                    icon: Icon(Icons.close, color: Colors.white, size: 20),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.transparent, // 투명 배경
-                      padding: EdgeInsets.all(8), // 작은 패딩
-                      minimumSize: Size(36, 36), // 2/3 크기로 축소
-                    ),
+                // 닫기 버튼 (이전 성공 방식 - IconButton 직접 사용)
+                IconButton(
+                  onPressed: _closeModal,
+                  icon: Icon(Icons.close, color: Colors.white, size: 28),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.5),
+                    padding: EdgeInsets.all(8),
                   ),
                 ),
               ],
@@ -564,112 +561,77 @@ class _VideoModalState extends State<VideoModal> {
 
             const SizedBox(height: 16),
 
-            // 🔧 컨트롤 버튼들 - 더 큰 터치 영역으로 수정
+            // 컨트롤 버튼들 (이전 성공 방식 - IconButton 직접 사용)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 // 10초 되감기
-                Container(
-                  margin: EdgeInsets.all(4),
-                  child: IconButton(
-                    onPressed: () {
-                      print('⏪ 되감기 버튼 터치됨');
-                      _skipBackward();
-                    },
-                    icon: Icon(Icons.replay_10, color: Colors.white, size: 32),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withValues(alpha: 0.6),
-                      padding: EdgeInsets.all(12),
-                      minimumSize: Size(56, 56),
-                    ),
+                IconButton(
+                  onPressed: _skipBackward,
+                  icon: Icon(Icons.replay_10, color: Colors.white, size: 32),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.3),
+                    padding: EdgeInsets.all(12),
                   ),
                 ),
 
-                // 재생/일시정지
-                Container(
-                  margin: EdgeInsets.all(4),
-                  child: IconButton(
-                    onPressed: () {
-                      print('⏯️ 재생/일시정지 버튼 터치됨');
-                      _togglePlayPause();
-                    },
-                    icon: Icon(
-                      _controller?.value.isPlaying == true
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_filled,
-                      color: Colors.white,
-                      size: 48,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Color(
-                        AppConstants.primaryColorValue,
-                      ).withValues(alpha: 0.8),
-                      padding: EdgeInsets.all(8),
-                      minimumSize: Size(64, 64),
-                    ),
+                // 재생/일시정지 (이전 성공 방식)
+                IconButton(
+                  onPressed: _togglePlayPause,
+                  icon: Icon(
+                    _controller?.value.isPlaying == true
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_filled,
+                    color: Colors.white,
+                    size: 48,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Color(
+                      AppConstants.primaryColorValue,
+                    ).withValues(alpha: 0.8),
+                    padding: EdgeInsets.all(8),
                   ),
                 ),
 
                 // 10초 빨리감기
-                Container(
-                  margin: EdgeInsets.all(4),
-                  child: IconButton(
-                    onPressed: () {
-                      print('⏩ 빨리감기 버튼 터치됨');
-                      _skipForward();
-                    },
-                    icon: Icon(Icons.forward_10, color: Colors.white, size: 32),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withValues(alpha: 0.6),
-                      padding: EdgeInsets.all(12),
-                      minimumSize: Size(56, 56),
-                    ),
+                IconButton(
+                  onPressed: _skipForward,
+                  icon: Icon(Icons.forward_10, color: Colors.white, size: 32),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.3),
+                    padding: EdgeInsets.all(12),
                   ),
                 ),
 
-                // 볼륨 버튼
-                Container(
-                  margin: EdgeInsets.all(4),
-                  child: IconButton(
-                    onPressed: () {
-                      print('🔊 볼륨 버튼 터치됨');
-                      _toggleVolumeSlider();
-                    },
-                    icon: Icon(
-                      _getVolumeIconData(),
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: _showVolumeSlider
-                          ? Color(
-                              AppConstants.primaryColorValue,
-                            ).withValues(alpha: 0.8)
-                          : Colors.black.withValues(alpha: 0.6),
-                      padding: EdgeInsets.all(12),
-                      minimumSize: Size(56, 56),
-                    ),
+                // 볼륨 버튼 (이전 성공 방식)
+                IconButton(
+                  onPressed: _toggleVolumeSlider,
+                  icon: Icon(
+                    _getVolumeIconData(),
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: _showVolumeSlider
+                        ? Color(
+                            AppConstants.primaryColorValue,
+                          ).withValues(alpha: 0.5)
+                        : Colors.black.withValues(alpha: 0.3),
+                    padding: EdgeInsets.all(12),
                   ),
                 ),
 
                 // 외부에서 열기 버튼
-                Container(
-                  margin: EdgeInsets.all(4),
-                  child: IconButton(
-                    onPressed: () {
-                      print('🌐 브라우저 버튼 터치됨');
-                      _openInBrowser();
-                    },
-                    icon: Icon(
-                      Icons.open_in_browser,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withValues(alpha: 0.6),
-                      padding: EdgeInsets.all(12),
-                      minimumSize: Size(56, 56),
-                    ),
+                IconButton(
+                  onPressed: _openInBrowser,
+                  icon: Icon(
+                    Icons.open_in_browser,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.3),
+                    padding: EdgeInsets.all(12),
                   ),
                 ),
               ],
@@ -744,40 +706,32 @@ class _VideoModalState extends State<VideoModal> {
     );
   }
 
-  // 🔧 볼륨 슬라이더 위젯 - 터치 영역 개선
+  // 🔊 볼륨 슬라이더 위젯
   Widget _buildVolumeSlider() {
     return Positioned(
       right: 20,
       top: MediaQuery.of(context).size.height * 0.3,
       bottom: MediaQuery.of(context).size.height * 0.3,
       child: Container(
-        width: 70, // 더 넓게 조정
+        width: 60,
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(35),
+          color: Colors.black.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(30),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.5),
-            width: 2,
+            color: Colors.white.withValues(alpha: 0.3),
+            width: 1,
           ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 볼륨 최대 버튼 - 더 큰 터치 영역
-            Container(
-              margin: EdgeInsets.all(4),
-              child: IconButton(
-                onPressed: () {
-                  print('🔊 최대 볼륨 버튼 터치됨');
-                  _setVolume(1.0);
-                },
-                icon: Icon(Icons.volume_up, color: Colors.white, size: 28),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.green.withValues(alpha: 0.6),
-                  padding: EdgeInsets.all(8),
-                  minimumSize: Size(48, 48),
-                ),
-              ),
+            // 볼륨 최대 버튼 (이전 성공 방식)
+            IconButton(
+              onPressed: () {
+                print('🔊 최대 볼륨 버튼 클릭됨');
+                _setVolume(1.0);
+              },
+              icon: Icon(Icons.volume_up, color: Colors.white, size: 24),
             ),
 
             // 볼륨 슬라이더
@@ -791,50 +745,34 @@ class _VideoModalState extends State<VideoModal> {
                       activeTrackColor: Color(AppConstants.primaryColorValue),
                       inactiveTrackColor: Colors.grey[600],
                       thumbColor: Color(AppConstants.primaryColorValue),
-                      thumbShape: RoundSliderThumbShape(enabledThumbRadius: 10),
-                      overlayShape: RoundSliderOverlayShape(overlayRadius: 20),
-                      trackHeight: 6,
+                      thumbShape: RoundSliderThumbShape(enabledThumbRadius: 8),
+                      overlayShape: RoundSliderOverlayShape(overlayRadius: 16),
+                      trackHeight: 4,
                     ),
                     child: Slider(
                       value: _volume,
                       min: 0.0,
                       max: 1.0,
                       divisions: 20,
-                      onChanged: (value) {
-                        print('🔊 슬라이더 조절: ${(value * 100).toInt()}%');
-                        _setVolume(value);
-                      },
+                      onChanged: _setVolume,
                     ),
                   ),
                 ),
               ),
             ),
 
-            // 볼륨 최소 버튼 - 더 큰 터치 영역
-            Container(
-              margin: EdgeInsets.all(4),
-              child: IconButton(
-                onPressed: () {
-                  print('🔇 음소거 버튼 터치됨');
-                  _setVolume(0.0);
-                },
-                icon: Icon(Icons.volume_off, color: Colors.white, size: 28),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.red.withValues(alpha: 0.6),
-                  padding: EdgeInsets.all(8),
-                  minimumSize: Size(48, 48),
-                ),
-              ),
+            // 볼륨 최소 버튼 (이전 성공 방식)
+            IconButton(
+              onPressed: () {
+                print('🔇 음소거 버튼 클릭됨');
+                _setVolume(0.0);
+              },
+              icon: Icon(Icons.volume_off, color: Colors.white, size: 24),
             ),
 
             // 볼륨 퍼센트 표시
             Container(
               margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.blue.withValues(alpha: 0.8),
-                borderRadius: BorderRadius.circular(8),
-              ),
               child: Text(
                 '${(_volume * 100).toInt()}%',
                 style: TextStyle(
