@@ -1,126 +1,104 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
-import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/movie_result.dart';
+import '../services/translation_service.dart';
 import '../utils/constants.dart';
 
 class VideoModal extends StatefulWidget {
-  final String videoUrl;
-  final String title;
-  final String phrase;
-  final String timestamp;
+  // 필수 파라미터들
+  final MovieResult? movie;
+  final TranslationService? translationService;
+
+  // movie_results_section.dart에서 사용하는 파라미터들
+  final String? videoUrl;
+  final String? title;
+  final String? phrase;
+  final String? timestamp;
 
   const VideoModal({
     super.key,
-    required this.videoUrl,
-    required this.title,
-    required this.phrase,
-    required this.timestamp,
+    this.movie,
+    this.translationService,
+    this.videoUrl,
+    this.title,
+    this.phrase,
+    this.timestamp,
   });
 
   @override
   State<VideoModal> createState() => _VideoModalState();
 }
 
-class _VideoModalState extends State<VideoModal> with TickerProviderStateMixin {
+class _VideoModalState extends State<VideoModal> {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
-  bool _isError = false;
-  String _errorMessage = '';
+  bool _hasError = false;
   bool _showControls = true;
-  bool _useWebView = false;
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
+  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
-    _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
-    );
     _initializeVideo();
     _startControlsTimer();
   }
 
-  void _initializeVideo() async {
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initializeVideo() async {
+    // videoUrl 파라미터 우선, 없으면 movie.videoUrl 사용
+    final videoUrl = widget.videoUrl ?? widget.movie?.videoUrl;
+
+    if (videoUrl == null || videoUrl.isEmpty) {
+      setState(() {
+        _hasError = true;
+        _errorMessage = '비디오 URL이 없습니다.';
+      });
+      return;
+    }
+
     try {
-      print('🎥 비디오 초기화 시작: ${widget.videoUrl}');
+      print('🎥 비디오 초기화 시작: $videoUrl');
 
-      // URI 유효성 검사
-      final uri = Uri.tryParse(widget.videoUrl);
-      if (uri == null) {
-        throw Exception('잘못된 비디오 URL 형식');
-      }
+      // 이전 성공 방식: 단순한 NetworkUrl 생성 (옵션 없이)
+      _controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
 
-      // 기존 방식: 단순한 VideoPlayerController 생성
-      _controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-      );
-
-      // 리스너 추가
-      _controller?.addListener(_videoListener);
-
-      // 타임아웃 설정으로 초기화
-      await _controller?.initialize().timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          throw Exception('비디오 로딩 타임아웃 (15초)');
-        },
-      );
-
-      // 설정 적용
-      await _controller?.setLooping(true);
-      await _controller?.play();
+      await _controller!.initialize();
 
       if (mounted) {
         setState(() {
           _isInitialized = true;
-          _isError = false;
+          _hasError = false;
         });
-      }
 
-      print('✅ 비디오 초기화 완료');
+        // 자동 재생 및 반복
+        _controller!.play();
+        _controller!.setLooping(true);
+
+        print('✅ 비디오 초기화 성공');
+        print('📐 AspectRatio: ${_controller!.value.aspectRatio}');
+        print('📱 VideoSize: ${_controller!.value.size}');
+      }
     } catch (e) {
       print('🚨 비디오 초기화 에러: $e');
 
-      // UnimplementedError인 경우 WebView로 대체
-      if (e.toString().contains('UnimplementedError') ||
-          e.toString().contains('init() has not been implemented')) {
-        print('📱 WebView 모드로 전환');
-        setState(() {
-          _useWebView = true;
-          _isError = false;
-          _isInitialized = true;
-        });
-        return;
-      }
-
       if (mounted) {
         setState(() {
-          _isError = true;
-          _errorMessage = e.toString();
+          _hasError = true;
+          _errorMessage = '비디오를 로드할 수 없습니다: ${e.toString()}';
         });
       }
-    }
-  }
-
-  void _videoListener() {
-    if (_controller?.value.hasError == true) {
-      setState(() {
-        _isError = true;
-        _errorMessage = _controller?.value.errorDescription ?? '알 수 없는 에러';
-      });
     }
   }
 
   void _startControlsTimer() {
     Future.delayed(const Duration(seconds: 5), () {
-      if (mounted && _showControls && !_useWebView) {
-        _fadeController.forward();
+      if (mounted) {
         setState(() {
           _showControls = false;
         });
@@ -129,203 +107,114 @@ class _VideoModalState extends State<VideoModal> with TickerProviderStateMixin {
   }
 
   void _toggleControls() {
-    if (_useWebView) return; // WebView에서는 컨트롤 비활성화
-
     setState(() {
-      if (_showControls) {
-        _fadeController.forward();
-        _showControls = false;
-      } else {
-        _fadeController.reverse();
-        _showControls = true;
-        _startControlsTimer();
-      }
+      _showControls = !_showControls;
     });
-  }
 
-  void _seekBackward() {
-    final position = _controller?.value.position;
-    if (position != null) {
-      final newPosition = position - const Duration(seconds: 10);
-      _controller?.seekTo(
-        newPosition > Duration.zero ? newPosition : Duration.zero,
-      );
+    if (_showControls) {
+      _startControlsTimer();
     }
   }
 
-  void _seekForward() {
-    final position = _controller?.value.position;
-    final duration = _controller?.value.duration;
-    if (position != null && duration != null) {
-      final newPosition = position + const Duration(seconds: 10);
-      _controller?.seekTo(newPosition < duration ? newPosition : duration);
+  void _togglePlayPause() {
+    if (_controller != null && _controller!.value.isInitialized) {
+      if (_controller!.value.isPlaying) {
+        _controller!.pause();
+      } else {
+        _controller!.play();
+      }
+      setState(() {});
     }
   }
 
-  void _copyUrl() {
-    Clipboard.setData(ClipboardData(text: widget.videoUrl));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('URL이 클립보드에 복사되었습니다'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+  void _seekTo(Duration position) {
+    _controller?.seekTo(position);
   }
 
-  void _openInBrowser() async {
-    final uri = Uri.parse(widget.videoUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  void _skipBackward() {
+    if (_controller != null) {
+      final current = _controller!.value.position;
+      final newPosition = current - const Duration(seconds: 10);
+      _seekTo(newPosition > Duration.zero ? newPosition : Duration.zero);
     }
   }
 
-  @override
-  void dispose() {
-    _controller?.removeListener(_videoListener);
-    _controller?.dispose();
-    _fadeController.dispose();
-    super.dispose();
+  void _skipForward() {
+    if (_controller != null) {
+      final current = _controller!.value.position;
+      final duration = _controller!.value.duration;
+      final newPosition = current + const Duration(seconds: 10);
+      _seekTo(newPosition < duration ? newPosition : duration);
+    }
   }
+
+  Future<void> _openInBrowser() async {
+    final videoUrl = widget.videoUrl ?? widget.movie?.videoUrl;
+    if (videoUrl != null) {
+      try {
+        final uri = Uri.parse(videoUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      } catch (e) {
+        print('브라우저 열기 실패: $e');
+      }
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
+    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
+    return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
+  }
+
+  // 헬퍼 메서드들
+  String get _displayTitle => widget.title ?? widget.movie?.name ?? '영화';
+  String get _displayPhrase => widget.phrase ?? widget.movie?.text ?? '';
+  String get _displayTimestamp =>
+      widget.timestamp ?? widget.movie?.startTime ?? '';
 
   @override
   Widget build(BuildContext context) {
     return Dialog.fullscreen(
       backgroundColor: Colors.black,
-      child: GestureDetector(
-        onTap: _toggleControls,
-        child: Stack(
-          children: [
-            // 비디오 플레이어 또는 대체 UI
-            Center(child: _buildVideoPlayer()),
-
-            // 컨트롤 오버레이 (WebView가 아닐 때만)
-            if (!_useWebView) ...[
-              AnimatedBuilder(
-                animation: _fadeAnimation,
-                builder: (context, child) {
-                  return Opacity(
-                    opacity: _showControls ? 1.0 : _fadeAnimation.value,
-                    child: child,
-                  );
-                },
-                child: _buildControlsOverlay(),
-              ),
-            ],
-
-            // 상단 정보
-            _buildTopOverlay(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVideoPlayer() {
-    if (_useWebView) {
-      return _buildWebViewFallback();
-    }
-
-    if (_isError) {
-      return _buildErrorWidget();
-    }
-
-    if (!_isInitialized || _controller == null) {
-      return _buildLoadingWidget();
-    }
-
-    final aspectRatio = _controller!.value.aspectRatio;
-    print('🎥 AspectRatio: $aspectRatio');
-    print('🎥 Video Size: ${_controller!.value.size}');
-
-    // 올바른 비율로 중앙에 표시
-    return Center(
-      child: AspectRatio(
-        aspectRatio: aspectRatio,
-        child: Container(color: Colors.black, child: VideoPlayer(_controller!)),
-      ),
-    );
-  }
-
-  Widget _buildWebViewFallback() {
-    return Container(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
         children: [
-          Icon(
-            Icons.play_circle_outline,
-            size: 80,
-            color: AppConstants.primaryColor,
-          ),
-          const SizedBox(height: 24),
-          Text(
-            '비디오 플레이어 호환성 문제',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+          // 비디오 플레이어 영역 (이전 성공 방식)
+          Center(child: _buildVideoContent()),
+
+          // 상단 영화 정보 오버레이
+          if (_showControls) _buildTopOverlay(),
+
+          // 하단 컨트롤 오버레이
+          if (_showControls) _buildBottomOverlay(),
+
+          // 터치 감지 영역
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _toggleControls,
+              behavior: HitTestBehavior.translucent,
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '기본 비디오 플레이어를 사용할 수 없습니다.\n외부 브라우저에서 비디오를 재생하시겠습니까?',
-            style: TextStyle(color: Colors.grey[400], fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 32),
-          Column(
-            children: [
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _openInBrowser,
-                  icon: const Icon(Icons.open_in_browser),
-                  label: const Text('브라우저에서 열기'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppConstants.primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _copyUrl,
-                  icon: const Icon(Icons.copy),
-                  label: const Text('URL 복사'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _useWebView = false;
-                      _isError = false;
-                      _isInitialized = false;
-                    });
-                    _initializeVideo();
-                  },
-                  child: const Text('다시 시도'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey[400],
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildVideoContent() {
+    if (_hasError) {
+      return _buildErrorWidget();
+    }
+
+    if (!_isInitialized) {
+      return _buildLoadingWidget();
+    }
+
+    // 이전 성공 방식: 단순한 AspectRatio + VideoPlayer
+    return AspectRatio(
+      aspectRatio: _controller!.value.aspectRatio,
+      child: VideoPlayer(_controller!),
     );
   }
 
@@ -335,23 +224,19 @@ class _VideoModalState extends State<VideoModal> with TickerProviderStateMixin {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(
-            color: AppConstants.primaryColor,
+          CircularProgressIndicator(
+            color: Color(AppConstants.primaryColorValue),
             strokeWidth: 3,
           ),
           const SizedBox(height: 24),
           Text(
-            '비디오를 로딩 중...',
+            '비디오를 불러오는 중...',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '최대 15초까지 소요될 수 있습니다',
-            style: TextStyle(color: Colors.grey[400], fontSize: 14),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -364,60 +249,44 @@ class _VideoModalState extends State<VideoModal> with TickerProviderStateMixin {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
+          Icon(Icons.error_outline, color: Colors.red[400], size: 64),
           const SizedBox(height: 24),
           Text(
-            '비디오를 로드할 수 없습니다',
+            '비디오를 재생할 수 없습니다',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
           Text(
-            _errorMessage.isEmpty ? '네트워크 연결을 확인해주세요' : _errorMessage,
+            _errorMessage,
             style: TextStyle(color: Colors.grey[400], fontSize: 14),
             textAlign: TextAlign.center,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 32),
-          Column(
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _isError = false;
-                      _isInitialized = false;
-                      _useWebView = false;
-                    });
-                    _initializeVideo();
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('다시 시도'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppConstants.primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
+              ElevatedButton.icon(
+                onPressed: _initializeVideo,
+                icon: Icon(Icons.refresh),
+                label: Text('다시 시도'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(AppConstants.primaryColorValue),
+                  foregroundColor: Colors.white,
                 ),
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _openInBrowser,
-                  icon: const Icon(Icons.open_in_browser),
-                  label: const Text('브라우저에서 열기'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
+              const SizedBox(width: 16),
+              ElevatedButton.icon(
+                onPressed: _openInBrowser,
+                icon: Icon(Icons.open_in_browser),
+                label: Text('브라우저에서 열기'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[800],
+                  foregroundColor: Colors.white,
                 ),
               ),
             ],
@@ -428,82 +297,135 @@ class _VideoModalState extends State<VideoModal> with TickerProviderStateMixin {
   }
 
   Widget _buildTopOverlay() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.black.withValues(alpha: 0.7), Colors.transparent],
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+          ),
         ),
-      ),
-      child: SafeArea(
-        child: Row(
+        padding: const EdgeInsets.fromLTRB(16, 40, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IconButton(
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close, color: Colors.white, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _displayTitle,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (_displayTimestamp.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _displayTimestamp,
+                          style: TextStyle(
+                            color: Color(AppConstants.primaryColorValue),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  if (widget.phrase.isNotEmpty) ...[
-                    const SizedBox(height: 4),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(Icons.close, color: Colors.white, size: 28),
+                ),
+              ],
+            ),
+            if (_displayPhrase.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      '"${widget.phrase}"',
+                      '🇺🇸 Original',
                       style: TextStyle(
-                        color: Colors.grey[300],
-                        fontSize: 14,
+                        fontSize: 12,
+                        color: Colors.grey[400],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '"$_displayPhrase"',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
                         fontStyle: FontStyle.italic,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
+                    // 번역 서비스가 있을 때만 번역 표시
+                    if (widget.translationService != null) ...[
+                      SizedBox(height: 12),
+                      Text(
+                        '🇰🇷 한글 번역',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green[300],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      FutureBuilder<String?>(
+                        future: widget.translationService!.translateToKorean(
+                          _displayPhrase,
+                        ),
+                        builder: (context, snapshot) {
+                          String translationText = '번역 중...';
+                          if (snapshot.hasData && snapshot.data != null) {
+                            translationText = '"${snapshot.data}"';
+                          } else if (snapshot.hasError) {
+                            translationText = '번역 실패';
+                          }
+
+                          return Text(
+                            translationText,
+                            style: TextStyle(
+                              color: Colors.green[300],
+                              fontSize: 16,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ],
-                  if (widget.timestamp.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.timestamp,
-                      style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                    ),
-                  ],
-                ],
+                ),
               ),
-            ),
-            IconButton(
-              onPressed: _copyUrl,
-              icon: const Icon(Icons.share, color: Colors.white),
-            ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildControlsOverlay() {
-    if (!_isInitialized || _controller == null || _useWebView) {
-      return const SizedBox.shrink();
-    }
-
+  Widget _buildBottomOverlay() {
     return Positioned(
       bottom: 0,
       left: 0,
       right: 0,
       child: Container(
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.bottomCenter,
@@ -511,70 +433,101 @@ class _VideoModalState extends State<VideoModal> with TickerProviderStateMixin {
             colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
           ),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // 진행률 바
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
+        child: Column(
+          children: [
+            // 진행률 바
+            if (_controller != null && _controller!.value.isInitialized)
               VideoProgressIndicator(
                 _controller!,
                 allowScrubbing: true,
-                colors: const VideoProgressColors(
-                  playedColor: AppConstants.primaryColor,
-                  backgroundColor: Colors.grey,
-                  bufferedColor: Colors.grey,
+                colors: VideoProgressColors(
+                  playedColor: Color(AppConstants.primaryColorValue),
+                  bufferedColor: Colors.grey[600]!,
+                  backgroundColor: Colors.grey[800]!,
                 ),
               ),
-              const SizedBox(height: 16),
 
-              // 컨트롤 버튼들
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildControlButton(
-                    icon: Icons.replay_10,
-                    onPressed: _seekBackward,
-                  ),
-                  _buildControlButton(
-                    icon: _controller!.value.isPlaying
-                        ? Icons.pause
-                        : Icons.play_arrow,
-                    onPressed: () {
-                      if (_controller!.value.isPlaying) {
-                        _controller!.pause();
-                      } else {
-                        _controller!.play();
-                      }
-                      setState(() {});
-                    },
+            const SizedBox(height: 16),
+
+            // 컨트롤 버튼들
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // 10초 되감기
+                IconButton(
+                  onPressed: _skipBackward,
+                  icon: Icon(Icons.replay_10, color: Colors.white, size: 32),
+                ),
+
+                // 재생/일시정지
+                IconButton(
+                  onPressed: _togglePlayPause,
+                  icon: Icon(
+                    _controller?.value.isPlaying == true
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_filled,
+                    color: Color(AppConstants.primaryColorValue),
                     size: 48,
                   ),
-                  _buildControlButton(
-                    icon: Icons.forward_10,
-                    onPressed: _seekForward,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+                ),
 
-  Widget _buildControlButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-    double size = 40,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.black.withValues(alpha: 0.5),
-      ),
-      child: IconButton(
-        onPressed: onPressed,
-        icon: Icon(icon, color: Colors.white),
-        iconSize: size,
+                // 10초 빨리감기
+                IconButton(
+                  onPressed: _skipForward,
+                  icon: Icon(Icons.forward_10, color: Colors.white, size: 32),
+                ),
+
+                // 외부에서 열기 버튼
+                IconButton(
+                  onPressed: _openInBrowser,
+                  icon: Icon(
+                    Icons.open_in_browser,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ],
+            ),
+
+            // 재생 시간 표시
+            if (_controller != null && _controller!.value.isInitialized)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      "${_formatDuration(_controller!.value.position)} / ${_formatDuration(_controller!.value.duration)}",
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const SizedBox(width: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.repeat, color: Colors.white, size: 12),
+                          SizedBox(width: 4),
+                          Text(
+                            "무한반복",
+                            style: TextStyle(color: Colors.white, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
