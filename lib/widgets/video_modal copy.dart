@@ -444,16 +444,35 @@ class _VideoModalState extends State<VideoModal> {
                           ),
                         ),
                       ],
+                      // 영화 정보 추가 (연도, 감독 등)
+                      if (widget.movie != null &&
+                          widget.movie!.movieInfo.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.movie!.movieInfo,
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                // 닫기 버튼 (이전 성공 방식 - IconButton 직접 사용)
-                IconButton(
-                  onPressed: _closeModal,
-                  icon: Icon(Icons.close, color: Colors.white, size: 28),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.black.withValues(alpha: 0.5),
-                    padding: EdgeInsets.all(8),
+                // 🔧 닫기 버튼 - 단순하고 작게 수정
+                Container(
+                  margin: EdgeInsets.all(4),
+                  child: IconButton(
+                    onPressed: () {
+                      print('❌ 닫기 버튼 터치됨');
+                      _closeModal();
+                    },
+                    icon: Icon(Icons.close, color: Colors.white, size: 20),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.transparent, // 투명 배경
+                      padding: EdgeInsets.all(8), // 작은 패딩
+                      minimumSize: Size(36, 36), // 2/3 크기로 축소
+                    ),
                   ),
                 ),
               ],
@@ -486,8 +505,54 @@ class _VideoModalState extends State<VideoModal> {
                         fontStyle: FontStyle.italic,
                       ),
                     ),
-                    // 번역 서비스가 있을 때만 번역 표시
-                    if (widget.translationService != null) ...[
+                    // Django에서 받은 한글 번역 표시 (있을 경우)
+                    if (widget.movie != null &&
+                        widget.movie!.hasKoreanTranslation) ...[
+                      SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Text(
+                            '🇰🇷 한글 번역',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green[300],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (widget.movie!.hasGoodTranslation)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                widget.movie!.translationQualityDisplay,
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '"${widget.movie!.koreanText}"',
+                        style: TextStyle(
+                          color: Colors.green[300],
+                          fontSize: 16,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ]
+                    // 번역 서비스가 있을 때만 실시간 번역 표시
+                    else if (widget.translationService != null) ...[
                       SizedBox(height: 12),
                       Text(
                         '🇰🇷 한글 번역',

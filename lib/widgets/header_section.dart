@@ -80,7 +80,7 @@ class HeaderSection extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '영어 많이 듣자!',
+                    '많이 듣자, 영어!',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,

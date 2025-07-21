@@ -6,10 +6,7 @@ import 'video_modal.dart';
 class MovieResultsSection extends StatelessWidget {
   final List<MovieResult> movies;
 
-  const MovieResultsSection({
-    Key? key,
-    required this.movies,
-  }) : super(key: key);
+  const MovieResultsSection({Key? key, required this.movies}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -36,11 +33,7 @@ class MovieResultsSection extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(
-                Icons.movie,
-                color: Colors.white,
-                size: 24,
-              ),
+              const Icon(Icons.movie, color: Colors.white, size: 24),
               const SizedBox(width: 8),
               const Text(
                 '🎬 검색 결과',
@@ -166,25 +159,29 @@ class MovieResultsSection extends StatelessWidget {
                                   height: double.infinity,
                                   loadingBuilder:
                                       (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      color: Colors.grey.withValues(alpha: 0.3),
-                                      child: Center(
-                                        child: CircularProgressIndicator(
-                                          value: loadingProgress
-                                                      .expectedTotalBytes !=
-                                                  null
-                                              ? loadingProgress
-                                                      .cumulativeBytesLoaded /
+                                        if (loadingProgress == null)
+                                          return child;
+                                        return Container(
+                                          color: Colors.grey.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                          child: Center(
+                                            child: CircularProgressIndicator(
+                                              value:
                                                   loadingProgress
-                                                      .expectedTotalBytes!
-                                              : null,
-                                          color: AppConstants.primaryColor,
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                                          .expectedTotalBytes !=
+                                                      null
+                                                  ? loadingProgress
+                                                            .cumulativeBytesLoaded /
+                                                        loadingProgress
+                                                            .expectedTotalBytes!
+                                                  : null,
+                                              color: AppConstants.primaryColor,
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                   errorBuilder: (context, error, stackTrace) {
                                     return _buildPlaceholderPoster();
                                   },
@@ -205,18 +202,57 @@ class MovieResultsSection extends StatelessWidget {
                             ),
                           ),
 
-                          // 재생 버튼
-                          const Positioned(
+                          // 재생 버튼 및 추가 정보
+                          Positioned(
                             bottom: 8,
+                            left: 8,
                             right: 8,
-                            child: CircleAvatar(
-                              radius: 20,
-                              backgroundColor: AppConstants.primaryColor,
-                              child: Icon(
-                                Icons.play_arrow,
-                                color: Colors.white,
-                                size: 24,
-                              ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                // 재생 횟수 (있을 경우)
+                                if (movie.playCount != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.play_arrow,
+                                          color: Colors.white,
+                                          size: 12,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${movie.playCount}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                // 재생 버튼
+                                const CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: AppConstants.primaryColor,
+                                  child: Icon(
+                                    Icons.play_arrow,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -241,44 +277,102 @@ class MovieResultsSection extends StatelessWidget {
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
                           ),
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                        ),
+
+                        // 영화 정보 (연도, 감독 등)
+                        if (movie.movieInfo.isNotEmpty)
+                          Text(
+                            movie.movieInfo,
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 10,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+
+                        const SizedBox(height: 4),
+
+                        // 시간 및 번역 품질
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppConstants.accentColor.withValues(
+                                  alpha: 0.2,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                movie.formattedTime,
+                                style: const TextStyle(
+                                  color: AppConstants.accentColor,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            if (movie.hasGoodTranslation)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  movie.translationQualityDisplay,
+                                  style: const TextStyle(
+                                    color: Colors.green,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
 
                         const SizedBox(height: 6),
 
-                        // 시간
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color:
-                                AppConstants.accentColor.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            movie.formattedTime,
-                            style: const TextStyle(
-                              color: AppConstants.accentColor,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        // 대사 미리보기
+                        // 대사 미리보기 (영어)
                         Expanded(
-                          child: Text(
-                            '"${movie.textPreview}"',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 11,
-                              fontStyle: FontStyle.italic,
-                            ),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '"${movie.textPreview}"',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                  fontSize: 11,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                                maxLines: movie.hasKoreanTranslation ? 2 : 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              // 한글 번역 (있을 경우)
+                              if (movie.hasKoreanTranslation) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  '"${movie.koreanTextPreview}"',
+                                  style: TextStyle(
+                                    color: Colors.orange[300],
+                                    fontSize: 10,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ],
@@ -301,19 +395,9 @@ class MovieResultsSection extends StatelessWidget {
       child: const Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.movie,
-            color: Colors.grey,
-            size: 48,
-          ),
+          Icon(Icons.movie, color: Colors.grey, size: 48),
           SizedBox(height: 8),
-          Text(
-            'No Poster',
-            style: TextStyle(
-              color: Colors.grey,
-              fontSize: 12,
-            ),
-          ),
+          Text('No Poster', style: TextStyle(color: Colors.grey, fontSize: 12)),
         ],
       ),
     );
@@ -406,6 +490,7 @@ class MovieResultsSection extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       builder: (context) => VideoModal(
+        movie: movie, // MovieResult 전체를 전달하여 추가 정보 활용
         videoUrl: movie.videoUrl,
         title: movie.name,
         phrase: movie.text,

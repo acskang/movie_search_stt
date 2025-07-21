@@ -6,16 +6,23 @@ class AppConstants {
   static const String appVersion = '1.0.0';
 
   // Django API 관련 상수 (실제 백엔드 URL)
-  static const String baseUrl = 'https://movie.thesysm.com';
+  // static const String baseUrl = 'https://movie.thesysm.com';
+  static const String baseUrl = 'http://127.0.0.1:8000'; // 로컬 개발용
 
-  // Django API 엔드포인트들 (실제 API 구조에 맞춤)
+  // Django API 엔드포인트들 (새로운 API 구조에 맞춤)
   static const String searchEndpoint =
-      '/api/search/'; // GET /api/search/?q=검색어&limit=5
+      '/api/search/'; // GET /api/search/?q=검색어&limit=20
   static const String statisticsEndpoint =
       '/api/statistics/'; // GET /api/statistics/
-  static const String searchHistoryEndpoint =
-      '/api/search-history/'; // GET /api/search-history/?type=recent&limit=10
+  static const String searchAnalyticsEndpoint =
+      '/api/search/analytics/'; // GET /api/search/analytics/?days=7
   static const String healthEndpoint = '/api/health/'; // GET /api/health/
+  static const String requestsEndpoint = '/api/requests/'; // GET /api/requests/
+  static const String moviesEndpoint =
+      '/api/movies-table/'; // GET /api/movies-table/
+  static const String dialoguesEndpoint =
+      '/api/dialogues/'; // GET /api/dialogues/
+  static const String apiInfoEndpoint = '/api/info/'; // GET /api/info/
 
   // 색상 관련 상수
   static const int primaryColorValue = 0xFF6366f1; // 인디고 블루

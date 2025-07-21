@@ -12,53 +12,41 @@ class SpeechService {
   bool _isAvailable = false;
   String _lastWords = '';
 
-  // 침묵 감지 관련 변수들 (개선)
-  Timer? _silenceTimer;
-  DateTime? _lastSpeechTime;
-  String _lastRecognizedText = '';
-  bool _speechDetected = false;
-  int _consecutiveSameResults = 0; // 동일한 결과 반복 횟수
-
   bool get isListening => _isListening;
   bool get isAvailable => _isAvailable;
   String get lastWords => _lastWords;
 
   Future<bool> initialize() async {
     try {
-      print('🎤 음성 인식 서비스 초기화 중...');
+      print('🎤 음성인식 초기화...');
 
       // 마이크 권한 요청
       final microphoneStatus = await Permission.microphone.request();
       if (microphoneStatus != PermissionStatus.granted) {
-        print('❌ 마이크 권한이 거부되었습니다');
+        print('❌ 마이크 권한 거부됨');
         return false;
       }
 
       // Speech-to-Text 초기화
       _isAvailable = await _speech.initialize(
         onError: (error) {
-          print('🚨 음성 인식 에러: ${error.errorMsg}');
-          _stopSilenceDetection();
+          print('🚨 음성인식 에러: ${error.errorMsg}');
           _isListening = false;
         },
         onStatus: (status) {
-          print('📊 음성 인식 상태: $status');
           _isListening = status == 'listening';
-          if (!_isListening) {
-            _stopSilenceDetection();
-          }
         },
       );
 
       if (_isAvailable) {
-        print('✅ 음성 인식 서비스 초기화 완료');
+        print('✅ 음성인식 초기화 완료');
       } else {
-        print('❌ 음성 인식 서비스를 사용할 수 없습니다');
+        print('❌ 음성인식 사용 불가');
       }
 
       return _isAvailable;
     } catch (e) {
-      print('🚨 음성 인식 초기화 에러: $e');
+      print('🚨 음성인식 초기화 실패: $e');
       return false;
     }
   }
@@ -83,106 +71,20 @@ class SpeechService {
 
       return languages;
     } catch (e) {
-      print('🚨 언어 목록 가져오기 에러: $e');
+      print('🚨 언어 목록 가져오기 실패: $e');
       return ['ko-KR', 'en-US']; // 기본값
-    }
-  }
-
-  // 🔧 개선된 침묵 감지 시작
-  void _startSilenceDetection() {
-    _stopSilenceDetection(); // 기존 타이머 정리
-
-    _lastSpeechTime = DateTime.now();
-    _speechDetected = false;
-    _lastRecognizedText = '';
-    _consecutiveSameResults = 0;
-
-    print('🔇 침묵 감지 시작 (6초 침묵 시 자동 종료)'); // 4초 → 6초로 증가
-
-    _silenceTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      if (!_isListening) {
-        timer.cancel();
-        return;
-      }
-
-      final now = DateTime.now();
-      final timeSinceLastSpeech = _lastSpeechTime != null
-          ? now.difference(_lastSpeechTime!).inMilliseconds
-          : 0;
-
-      // 🔧 조건 강화: 음성이 감지되고, 6초 침묵이고, 동일한 결과가 3번 이상 반복되면 종료
-      if (_speechDetected &&
-          timeSinceLastSpeech > 6000 && // 4초 → 6초로 증가
-          _consecutiveSameResults >= 3 && // 안정성 확보
-          _lastWords.trim().isNotEmpty) {
-        print('🔇 6초 침묵 + 안정된 결과 감지 - 음성인식 자동 종료');
-        print('📊 최종 인식 결과: "$_lastWords"');
-        timer.cancel();
-        _autoStopListening();
-      }
-    });
-  }
-
-  // 침묵 감지 중지
-  void _stopSilenceDetection() {
-    _silenceTimer?.cancel();
-    _silenceTimer = null;
-  }
-
-  // 🔧 개선된 음성 활동 감지 업데이트
-  void _updateSpeechActivity(String recognizedText, double soundLevel) {
-    final now = DateTime.now();
-
-    // 새로운 텍스트가 인식되었거나 소리 레벨이 높으면 음성 활동으로 간주
-    bool hasNewText =
-        recognizedText.isNotEmpty && recognizedText != _lastRecognizedText;
-    bool hasSoundActivity = soundLevel > -25.0; // -30dB → -25dB로 조정 (더 민감하게)
-
-    if (hasNewText || hasSoundActivity) {
-      _lastSpeechTime = now;
-      _speechDetected = true;
-
-      if (hasNewText) {
-        // 🔧 동일한 결과 반복 횟수 체크
-        if (recognizedText == _lastRecognizedText) {
-          _consecutiveSameResults++;
-        } else {
-          _consecutiveSameResults = 1;
-          _lastRecognizedText = recognizedText;
-          print('🎯 새로운 음성 인식: "$recognizedText"');
-        }
-      }
-
-      if (hasSoundActivity) {
-        print('🔊 음성 활동 감지: ${soundLevel.toStringAsFixed(1)}dB');
-      }
-    }
-  }
-
-  // 자동 중지 (침묵 감지로 인한)
-  Future<void> _autoStopListening() async {
-    try {
-      if (_isListening) {
-        await _speech.stop();
-        _stopSilenceDetection();
-        _isListening = false;
-        print('✅ 침묵 감지로 음성 인식 자동 완료');
-      }
-    } catch (e) {
-      print('🚨 자동 음성 인식 중지 에러: $e');
-      _isListening = false;
     }
   }
 
   Future<String?> startListening({
     String language = 'ko-KR',
-    Duration timeout = const Duration(seconds: 20), // 30초 → 20초로 적정화
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     try {
       if (!_isAvailable) {
         final initialized = await initialize();
         if (!initialized) {
-          throw Exception('음성 인식 서비스를 초기화할 수 없습니다');
+          throw Exception('음성인식 서비스를 초기화할 수 없습니다');
         }
       }
 
@@ -192,62 +94,105 @@ class SpeechService {
       }
 
       _lastWords = '';
-      _lastRecognizedText = '';
-      _speechDetected = false;
-      _consecutiveSameResults = 0;
+      print('🎤 음성인식 시작 ($language, ${timeout.inSeconds}초)');
 
-      print(
-        '🎤 음성 인식 시작 - 언어: $language (최대 ${timeout.inSeconds}초, 침묵 6초 시 자동 종료)',
-      );
+      // 🔧 최고 결과 추적 변수
+      String bestResult = '';
+      bool hasReceivedFinalResult = false;
 
-      // 침묵 감지 시작
-      _startSilenceDetection();
-
+      // 🔧 deprecated 해결: SpeechListenOptions 사용
       await _speech.listen(
         onResult: (result) {
           _lastWords = result.recognizedWords;
 
-          // 음성 활동 업데이트 (텍스트 기반)
-          _updateSpeechActivity(_lastWords, 0.0);
+          // 🔧 가장 긴 결과만 추적 (로그 최적화)
+          if (_lastWords.length > bestResult.length) {
+            bestResult = _lastWords;
+            print('🏆 새로운 최고: "$bestResult" (${bestResult.length}자)');
+          }
 
-          print('🗣️ 인식된 텍스트: "$_lastWords"');
-          print('📊 신뢰도: ${(result.confidence * 100).toStringAsFixed(1)}%');
-          print('🔄 최종결과: ${result.finalResult}');
-
-          // 🔧 finalResult 자동 종료 제거 - 너무 성급한 종료 방지
-          // if (result.finalResult && _lastWords.isNotEmpty) {
-          //   print('✅ 최종 결과 확정 - 음성인식 완료');
-          //   _autoStopListening();
-          // }
+          if (result.finalResult) {
+            hasReceivedFinalResult = true;
+            print('🏁 최종결과 수신');
+          }
         },
         listenFor: timeout,
-        pauseFor: const Duration(seconds: 3), // 8초 → 3초로 단축 (중요!)
-        partialResults: true, // 실시간 결과 유지
+        pauseFor: const Duration(seconds: 8),
         localeId: language,
-        cancelOnError: true,
+        listenOptions: stt.SpeechListenOptions(
+          partialResults: true, // deprecated 해결
+          cancelOnError: false, // deprecated 해결
+          onDevice: false,
+          listenMode: stt.ListenMode.confirmation,
+        ),
         onSoundLevelChange: (level) {
-          // 음성 활동 업데이트 (소리 레벨 기반)
-          _updateSpeechActivity(_lastWords, level);
+          // 🔧 로그 최적화: 중요한 소리만 출력
+          if (level > -25.0) {
+            print('🔊 소리감지: ${level.toStringAsFixed(1)}dB');
+          }
         },
       );
 
-      // 음성 인식 완료까지 대기
-      while (_isListening) {
-        await Future.delayed(const Duration(milliseconds: 100));
+      // 🔧 대기 시스템 최적화
+      int totalWaitTime = 0;
+      final maxWaitTime = timeout.inMilliseconds + 5000;
+
+      while (_isListening && totalWaitTime < maxWaitTime) {
+        await Future.delayed(const Duration(milliseconds: 500)); // 500ms 간격
+        totalWaitTime += 500;
+
+        // 🔧 로그 최적화: 5초마다만 출력
+        if (totalWaitTime % 5000 == 0) {
+          print('⏰ ${totalWaitTime / 1000}초 경과 - 최고: "$bestResult"');
+        }
+
+        // 🔧 조기 종료 조건 최적화
+        if (hasReceivedFinalResult &&
+            bestResult.isNotEmpty &&
+            bestResult.length >= 8 && // 최소 8글자
+            totalWaitTime >= 6000) {
+          // 최소 6초
+          print('✅ 조건 만족 - 조기 종료');
+          break;
+        }
       }
 
-      _stopSilenceDetection(); // 정리
+      // 강제 종료 및 마지막 체크
+      if (_isListening) {
+        await _speech.stop();
+        _isListening = false;
 
-      if (_lastWords.isNotEmpty) {
-        print('✅ 음성 인식 완료: "$_lastWords"');
-        return _lastWords;
+        // 종료 후 추가 대기
+        await Future.delayed(const Duration(milliseconds: 1000));
+
+        if (_lastWords.length > bestResult.length) {
+          bestResult = _lastWords;
+          print('🔄 종료 후 업데이트: "$bestResult"');
+        }
+      }
+
+      // 🔧 최종 결과 처리
+      final finalResult = bestResult.trim();
+
+      if (finalResult.isNotEmpty) {
+        final wordCount = finalResult.split(' ').length;
+        print(
+          '🎯 최종결과: "$finalResult" (${finalResult.length}자, ${wordCount}단어)',
+        );
+
+        if (wordCount >= 3) {
+          print('✅ 음성인식 성공');
+        } else {
+          print('⚠️ 짧은 결과 - 재시도 권장');
+        }
+
+        return finalResult;
       } else {
-        print('⚠️ 음성이 인식되지 않았습니다');
+        print('❌ 인식 실패');
         return null;
       }
     } catch (e) {
-      print('🚨 음성 인식 에러: $e');
-      _stopSilenceDetection();
+      print('🚨 음성인식 에러: $e');
       _isListening = false;
       return null;
     }
@@ -256,27 +201,24 @@ class SpeechService {
   Future<void> stopListening() async {
     try {
       if (_isListening) {
-        _stopSilenceDetection();
         await _speech.stop();
         _isListening = false;
-        print('⏹️ 음성 인식 수동 중지');
+        print('⏹️ 음성인식 중지');
       }
     } catch (e) {
-      print('🚨 음성 인식 중지 에러: $e');
-      _stopSilenceDetection();
+      print('🚨 음성인식 중지 에러: $e');
       _isListening = false;
     }
   }
 
   Future<void> cancel() async {
     try {
-      _stopSilenceDetection();
       await _speech.cancel();
       _isListening = false;
       _lastWords = '';
-      print('❌ 음성 인식 취소');
+      print('❌ 음성인식 취소');
     } catch (e) {
-      print('🚨 음성 인식 취소 에러: $e');
+      print('🚨 음성인식 취소 에러: $e');
     }
   }
 
@@ -302,13 +244,12 @@ class SpeechService {
 
   void dispose() {
     try {
-      _stopSilenceDetection();
       _speech.cancel();
       _isListening = false;
       _lastWords = '';
-      print('🗑️ 음성 인식 서비스 해제');
+      print('🗑️ 음성인식 서비스 해제');
     } catch (e) {
-      print('🚨 음성 인식 서비스 해제 에러: $e');
+      print('🚨 서비스 해제 에러: $e');
     }
   }
 }

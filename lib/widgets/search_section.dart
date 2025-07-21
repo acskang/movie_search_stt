@@ -75,18 +75,23 @@ class _SearchSectionState extends State<SearchSection> {
         _isListening = true;
       });
 
-      // 한국어로 음성 인식 시작 (30초, 침묵 4초 시 자동 종료)
+      print('🎤 음성 인식 시작...');
+
+      // 한국어로 음성 인식 시작 (30초, 침묵 감지)
       final result = await _speechService.startListening(
         language: 'ko-KR',
         timeout: const Duration(seconds: 30),
       );
 
-      if (result != null && result.isNotEmpty) {
-        print('🎤 음성 인식 결과: $result');
+      print('🎤 SpeechService 결과: "$result"');
 
-        // 음성인식 결과 확인 다이얼로그 표시
+      if (result != null && result.isNotEmpty) {
+        print('✅ 음성 인식 성공: "$result"');
+
+        // 🔧 즉시 다이얼로그 표시 (result 직접 전달)
         _showInputConfirmationDialog(result, true);
       } else {
+        print('❌ 음성 인식 실패 또는 빈 결과');
         _showSnackBar('음성이 인식되지 않았습니다. 다시 시도해주세요.');
       }
     } catch (e) {
@@ -101,6 +106,9 @@ class _SearchSectionState extends State<SearchSection> {
 
   // 📋 모든 입력에 대한 통합 확인 다이얼로그
   void _showInputConfirmationDialog(String inputText, bool isFromSpeech) {
+    // 🔧 디버깅을 위한 로그 추가
+    print('📋 다이얼로그 표시 - 입력: "$inputText", 음성여부: $isFromSpeech');
+
     // 한국어인지 확인
     final isKorean = widget.translationService?.isKorean(inputText) ?? false;
 
@@ -108,7 +116,7 @@ class _SearchSectionState extends State<SearchSection> {
       context: context,
       barrierDismissible: false, // 뒤로가기로 닫기 방지
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setDialogState) => AlertDialog(
           backgroundColor: AppConstants.cardColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -144,7 +152,7 @@ class _SearchSectionState extends State<SearchSection> {
               ),
               const SizedBox(height: 16),
 
-              // 입력된 텍스트 표시
+              // 🔧 입력된 텍스트 표시 (매개변수 inputText 직접 사용)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -189,6 +197,7 @@ class _SearchSectionState extends State<SearchSection> {
                       ],
                     ),
                     const SizedBox(height: 8),
+                    // 🔧 inputText 매개변수 직접 사용
                     Text(
                       '"$inputText"',
                       style: TextStyle(
@@ -196,6 +205,12 @@ class _SearchSectionState extends State<SearchSection> {
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
+                    ),
+                    // 🔧 디버깅 정보 추가 (개발 중에만 표시)
+                    const SizedBox(height: 4),
+                    Text(
+                      'Length: ${inputText.length} chars',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 10),
                     ),
                   ],
                 ),
@@ -250,10 +265,10 @@ class _SearchSectionState extends State<SearchSection> {
                       ),
                       const SizedBox(height: 8),
 
-                      // 번역 결과 또는 로딩 표시
+                      // 🔧 번역 결과 (inputText 매개변수 사용)
                       FutureBuilder<String?>(
                         future: widget.translationService?.translateToEnglish(
-                          inputText,
+                          inputText, // _controller.text 대신 inputText 사용
                         ),
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
@@ -376,7 +391,10 @@ class _SearchSectionState extends State<SearchSection> {
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.pop(context);
-                _handleInputConfirmation(inputText, isFromSpeech);
+                _handleInputConfirmation(
+                  inputText,
+                  isFromSpeech,
+                ); // inputText 직접 전달
               },
               icon: Icon(Icons.search, size: 18),
               label: Text('검색하기'),
@@ -399,15 +417,18 @@ class _SearchSectionState extends State<SearchSection> {
   void _handleInputConfirmation(String inputText, bool isFromSpeech) {
     print('✅ 사용자가 ${isFromSpeech ? "음성인식" : "키보드 입력"} 결과 확인: "$inputText"');
 
-    // 텍스트 필드에 입력 (음성인식인 경우만)
+    // 🔧 텍스트 필드에 입력 (음성인식인 경우만)
     if (isFromSpeech) {
-      _controller.text = inputText;
+      setState(() {
+        _controller.text = inputText; // 확실히 업데이트
+      });
+      print('📝 텍스트 필드 업데이트: "${_controller.text}"');
     }
 
     // 성공 메시지 표시
     _showSnackBar('✅ 검색을 시작합니다.');
 
-    // 백엔드로 검색 실행
+    // 백엔드로 검색 실행 (inputText 직접 사용)
     widget.onSearch(inputText);
   }
 
@@ -417,7 +438,9 @@ class _SearchSectionState extends State<SearchSection> {
 
     if (isFromSpeech) {
       // 음성인식인 경우: 텍스트 필드 초기화
-      _controller.clear();
+      setState(() {
+        _controller.clear();
+      });
       _showSnackBar('🎤 음성인식을 다시 시도해주세요.');
     } else {
       // 키보드 입력인 경우: 텍스트 필드에 포커스
@@ -539,7 +562,7 @@ class _SearchSectionState extends State<SearchSection> {
                     // 음성 인식 버튼
                     Tooltip(
                       message: _speechInitialized
-                          ? '음성으로 검색 (한국어, 최대 30초, 침묵 4초 시 자동 종료)\n인식 후 확인 단계를 거칩니다'
+                          ? '음성으로 검색 (한국어, 최대 30초)\n인식 후 확인 단계를 거칩니다'
                           : '음성 인식 사용 불가',
                       child: IconButton(
                         onPressed: _speechInitialized && !widget.isLoading
